@@ -8,7 +8,7 @@ module.exports = NodeHelper.create({
     start: function() {
         console.log("Starting node helper for: " + this.name);
         this.configuration = new Configuration({
-            apiKey: "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",
+            apiKey: "",
         });
         this.openai = new OpenAIApi(this.configuration);
         this.DG_ENDPOINT = 'wss://api.deepgram.com/v1/listen'
@@ -88,7 +88,7 @@ module.exports = NodeHelper.create({
     } else if(notification === "SPEECH_TEXT") {
         console.log("calling speech to text")
         const url = 'wss://api.deepgram.com/v1/listen';
-        const token = 'de383a063abff5083388bcaa80e5c692bdcfb808';
+        const token = '';
         const socket = new WebSocket(url, {
             headers: {
               Authorization: `Token ${token}`,
