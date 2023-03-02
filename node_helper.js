@@ -1,121 +1,130 @@
-
 const NodeHelper = require("node_helper");
 const { Configuration, OpenAIApi } = require("openai");
-const WebSocket = require('ws');
+const { Deepgram } = require("@deepgram/sdk");
+const WebSocket = require("ws");
 
+// const fetch = require("cross-fetch");
+// const model = 'general';
+// const lang = 'en-US';
+
+// const DG_ENDPOINT = "wss://api.deepgram.com/v1/listen";
+const deepgramApiKey = "0f2fda6a67bf83de50485a9d51db22bdd94a38b9";
+// const deepgram = new Deepgram(deepgramApiKey);
+// const deepgramLive = deepgram.transcription.live({
+// 	punctuate: false,
+// 	interim_results: false,
+// 	language: "en-GB"
+// });
 
 module.exports = NodeHelper.create({
-    start: function() {
-        console.log("Starting node helper for: " + this.name);
-        this.configuration = new Configuration({
-            apiKey: "",
-        });
-        this.openai = new OpenAIApi(this.configuration);
-        this.DG_ENDPOINT = 'wss://api.deepgram.com/v1/listen'
-        //console.log(this.openai);
-    },
+	start: function () {
+		console.log("Starting node helper for: " + this.name);
+		this.configuration = new Configuration({
+			apiKey: "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"
+		});
+		this.openai = new OpenAIApi(this.configuration);
+		//console.log(this.openai);
+		console.log("Starting transcription...");
+		// when the connection is established, send the configuration message
+	},
 
-    // Send a message to the chatGPT API and receive a response
-    getResponse: function(prompt) {
-        console.log("start function getREsponse call to chatGPT ");
-        return new Promise(async (resolve, reject) => {
-            try {
-                const response = await this.openai.createCompletion({
-                    model: "text-davinci-003",
-                    prompt: prompt,
-                    max_tokens: 256,
-                    temperature: 0.7,
-                });
-                // console.log("Received response from API: ", response);
-                console.log("Received response from API: ");
-                resolve(response);
-            } catch (error) {
-                console.log("Error in getResponse: ", error);
-                reject(error);
-            }
-        });
-    },
+	// Send a message to the chatGPT API and receive a response
+	getResponse: function (prompt) {
+		console.log("start function getREsponse call to chatGPT ");
+		return new Promise(async (resolve, reject) => {
+			try {
+				const response = await this.openai.createCompletion({
+					model: "text-davinci-003",
+					prompt: prompt,
+					max_tokens: 256,
+					temperature: 0.7
+				});
+				// console.log("Received response from API: ", response);
+				console.log("Received response from API: ");
+				resolve(response);
+			} catch (error) {
+				console.log("Error in getResponse: ", error);
+				reject(error);
+			}
+		});
+	},
 
-    //
-    DG_Speech2Text: function() {
-        console.log("Starting listening");
-        global.navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-            if (!MediaRecorder.isTypeSupported('audio/webm')) return alert('Browser not supported')
-            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-    
-            const socket = new WebSocket(this.DG_ENDPOINT, ['token', '0dbcf3bc16ffcbe6d8ed12354673eb5d2bef5a59']);
-    
-            socket.onopen = () => {
-              mediaRecorder.addEventListener('dataavailable', async (event) => {
-                if (event.data.size > 0 && socket.readyState == 1) {
-                  socket.send(event.data);
-                } 
-              })
-              mediaRecorder.start(250);
-            }
-    
-            socket.onmessage = (message) => {
-              const data = JSON.parse(message.data);
-              console.log(data);
-    
-              const { channel, is_final } = data;
-              const transcript = channel.alternatives[0].transcript;
-    
-              if (transcript && is_final) {
-                // document.querySelector('p').textContent += ' ' + transcript
-                console.log(transcript);
-              }
-            }
-          })
-        
-        
-    },
+	// Handle socket notifications
+	socketNotificationReceived: function (notification, payload) {
+		switch (notification) {
+			case "OPENAI_REQUEST":
+				const prompt = payload.prompt;
+				this.getResponse(prompt)
+					.then(
+						function (response) {
+							const message = response.data.choices[0].text;
+							this.sendSocketNotification("OPENAI_RESPONSE", { message: message });
+						}.bind(this)
+					)
+					.catch(function (error) {
+						console.error(error);
+					});
+				return;
 
+			case "TRANSCRIBE":
+        var socket = null;
+				console.log("Audio", payload);
+				// Connect to the streaming endpoint.
+				var establishConnection = function () {
+					console.log("Establishing connection.");
+					// Configure the websocket connection.
+					// This requires ws installed using 'npm i ws'.
+					socket = new WebSocket("wss://api.deepgram.com/v1/listen", {
+						// Replace with your Deepgram project's API Key.
+						headers: {
+							Authorization: `Token ${deepgramApiKey}`
+						}
+					});
+					socket.onopen = (m) => {
+						console.log("Socket opened!");
 
-  // Handle socket notifications
-  socketNotificationReceived: function(notification, payload) {
-    if (notification === "OPENAI_REQUEST") {
-      const prompt = payload.prompt;
-     
-      this.getResponse(prompt)
-      .then(function(response) {
-        const message = response.data.choices[0].text;
-        this.sendSocketNotification("OPENAI_RESPONSE", { message: message });
-      }.bind(this)).catch(function(error) {
-        console.error(error);
-      });
+						// Grab an audio file.
+						var contents = payload;
 
-    } else if(notification === "SPEECH_TEXT") {
-        console.log("calling speech to text")
-        const url = 'wss://api.deepgram.com/v1/listen';
-        const token = '';
-        const socket = new WebSocket(url, {
-            headers: {
-              Authorization: `Token ${token}`,
-            },
-          });
-        socket.onopen = () => {
-            console.log('WebSocket connection established.');
-            this.MediaRecorder.addEventListener('dataavailable', event => {
-                if (event.data.size > 0 && socket.readyState == 1) {
-                  socket.send(event.data);
-                }
-              })
-          }
-          
-          socket.onmessage = (message) => {
-            console.log({ event: 'onmessage', message });
-          }
-          
-          socket.onclose = () => {
-            console.log({ event: 'onclose' });
-          }
-          
-          socket.onerror = (error) => {
-            console.log({ event: 'onerror', error });
-          }
-        //this.DG_Speech2Text();
-    }
+						// Send the audio to the Deepgram API all at once (works if audio is relatively short).
+						// socket.send(contents);
 
-  },
+						// Send the audio to the Deepgram API in chunks of 1000 bytes.
+						chunk_size = 1000;
+						for (i = 0; i < contents.length; i += chunk_size) {
+							slice = contents.slice(i, i + chunk_size);
+							socket.send(slice);
+						}
+
+						// // Send the message to close the connection.
+						// socket.send(
+						// 	JSON.stringify({
+						// 		type: "CloseStream"
+						// 	})
+						// );
+					};
+					// socket.onclose = (m) => {
+					// 	console.log("Socket closed.");
+					// };
+
+					socket.onmessage = (m) => {
+						m = JSON.parse(m.data);
+						// Log the received message.
+						console.log(m);
+
+						// Log just the words from the received message.
+						if (m.hasOwnProperty("channel")) {
+							let words = m.channel.alternatives[0].words;
+							console.log(words);
+						}
+					};
+				};
+
+				establishConnection();
+				return;
+
+			default:
+				return;
+		}
+	}
 });
